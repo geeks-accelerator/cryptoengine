@@ -7,8 +7,12 @@ import (
 )
 
 func TestHKDFDerivation(t *testing.T) {
+	storage, err := NewStorageMemory()
+	if err != nil {
+		t.Fatalf("Got error - %+v", err)
+	}
 
-	engine, err := InitCryptoEngine("test-engine")
+	engine, err := InitCryptoEngine("test-engine", storage)
 	if err != nil {
 		t.Fatal(err)
 	}

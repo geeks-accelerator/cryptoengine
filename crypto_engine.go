@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
-	"errors"
+	"encoding/hex"
 	"fmt"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/crypto/nacl/secretbox"
-	"log"
 	"math"
 	"net/url"
 	"regexp"
@@ -54,6 +54,7 @@ var (
 // The object has the methods necessary to execute all the needed functions to encrypt and decrypt a message, both with symmetric and asymmetric
 // crypto
 type CryptoEngine struct {
+	storage          Storage
 	context          string                   // this is the context used for the key derivation function and for namespacing the key files
 	publicKey        [keySize]byte            // cached asymmetric public key
 	privateKey       [keySize]byte            // cached asymmetric private key
@@ -77,37 +78,39 @@ type CryptoEngine struct {
 // - it does the same with the asymmetric keys
 // The communicationIdentifier parameter is URL unescape, trimmed, set to lower case and all the white spaces are replaced with an underscore.
 // The publicKey parameter can be nil. In that case the CryptoEngine assumes it has been instanciated for symmetric crypto usage.
-func InitCryptoEngine(communicationIdentifier string) (*CryptoEngine, error) {
+func InitCryptoEngine(communicationIdentifier string, storage Storage) (*CryptoEngine, error) {
 	// define an error object
 	var err error
 	// create a new crypto engine object
 	ce := new(CryptoEngine)
 
+	ce.storage = storage
+
 	// sanitize the communicationIdentifier
 	ce.context = sanitizeIdentifier(communicationIdentifier)
 
 	// load or generate the salt
-	salt, err := loadSalt(ce.context)
+	salt, err := loadSalt(ce.context, ce.storage)
 	if err != nil {
 		return nil, err
 	}
 	ce.salt = salt
 
 	// load or generate the corresponding public/private key pair
-	ce.publicKey, ce.privateKey, err = loadKeyPairs(ce.context)
+	ce.publicKey, ce.privateKey, err = loadKeyPairs(ce.context, ce.storage)
 	if err != nil {
 		return nil, err
 	}
 
 	// load or generate the secret key
-	secretKey, err := loadSecretKey(ce.context)
+	secretKey, err := loadSecretKey(ce.context, ce.storage)
 	if err != nil {
 		return nil, err
 	}
 	ce.secretKey = secretKey
 
 	// load the nonce key
-	nonceKey, err := loadNonceKey(ce.context)
+	nonceKey, err := loadNonceKey(ce.context, ce.storage)
 	if err != nil {
 		return nil, err
 	}
@@ -155,23 +158,34 @@ func generateSecretKey() ([keySize]byte, error) {
 // if the file does not exist, create a new one
 // if the file is older than N days (default 2) generate a new one and overwrite the old
 // TODO: rotate the salt file
-func loadSalt(id string) ([keySize]byte, error) {
+func loadSalt(id string, storage Storage) ([keySize]byte, error) {
 
 	var salt [keySize]byte
 
 	saltFile := fmt.Sprintf(saltSuffixFormat, id)
-	if keyFileExists(saltFile) {
-		return readKey(saltFile, keysFolderPrefixFormat)
+	dat, err := storage.Read(saltFile)
+	if err != nil {
+		return salt, err
+	}
+
+	if len(dat) > 0 {
+		return readKey(dat)
 	}
 
 	// generate the random salt
-	salt, err := generateSalt()
+	salt, err = generateSalt()
 	if err != nil {
 		return salt, err
 	}
 
 	// write the salt to the file with its prefix
-	if err := writeKey(saltFile, keysFolderPrefixFormat, salt[:]); err != nil {
+	dat, err = writeKey(salt[:])
+	if err != nil {
+		return salt, err
+	}
+
+	err = storage.Write(saltFile, dat)
+	if err != nil {
 		return salt, err
 	}
 
@@ -181,23 +195,34 @@ func loadSalt(id string) ([keySize]byte, error) {
 
 // load the key random bytes from the id_secret.key
 // if the file does not exist, create a new one
-func loadSecretKey(id string) ([keySize]byte, error) {
+func loadSecretKey(id string, storage Storage) ([keySize]byte, error) {
 
 	var key [keySize]byte
 
 	keyFile := fmt.Sprintf(secretSuffixFormat, id)
-	if keyFileExists(keyFile) {
-		return readKey(keyFile, keysFolderPrefixFormat)
+	dat, err := storage.Read(keyFile)
+	if err != nil {
+		return key, err
+	}
+
+	if len(dat) > 0 {
+		return readKey(dat)
 	}
 
 	// generate the random salt
-	key, err := generateSecretKey()
+	key, err = generateSecretKey()
 	if err != nil {
 		return key, err
 	}
 
 	// write the salt to the file with its prefix
-	if err := writeKey(keyFile, keysFolderPrefixFormat, key[:]); err != nil {
+	dat, err = writeKey(key[:])
+	if err != nil {
+		return key, err
+	}
+
+	err = storage.Write(keyFile, dat)
+	if err != nil {
 		return key, err
 	}
 
@@ -207,23 +232,34 @@ func loadSecretKey(id string) ([keySize]byte, error) {
 
 // load the nonce key random bytes from the id_nonce.key
 // if the file does not exist, create a new one
-func loadNonceKey(id string) ([keySize]byte, error) {
+func loadNonceKey(id string, storage Storage) ([keySize]byte, error) {
 
 	var nonceKey [keySize]byte
 
 	nonceFile := fmt.Sprintf(nonceSuffixFormat, id)
-	if keyFileExists(nonceFile) {
-		return readKey(nonceFile, keysFolderPrefixFormat)
+	dat, err := storage.Read(nonceFile)
+	if err != nil {
+		return nonceKey, err
+	}
+
+	if len(dat) > 0 {
+		return readKey(dat)
 	}
 
 	// generate the random salt
-	nonceKey, err := generateSecretKey()
+	nonceKey, err = generateSecretKey()
 	if err != nil {
 		return nonceKey, err
 	}
 
 	// write the salt to the file with its prefix
-	if err := writeKey(nonceFile, keysFolderPrefixFormat, nonceKey[:]); err != nil {
+	dat, err = writeKey(nonceKey[:])
+	if err != nil {
+		return nonceKey, err
+	}
+
+	err = storage.Write(nonceFile, dat)
+	if err != nil {
 		return nonceKey, err
 	}
 
@@ -234,61 +270,90 @@ func loadNonceKey(id string) ([keySize]byte, error) {
 // load the key pair, public and private keys, the id_public.key, id_private.key
 // if the files do not exist, create them
 // Returns the publicKey, privateKey, error
-func loadKeyPairs(id string) ([keySize]byte, [keySize]byte, error) {
+func loadKeyPairs(id string, storage Storage) ([keySize]byte, [keySize]byte, error) {
 
 	var private [keySize]byte
 	var public [keySize]byte
 	var err error
 
 	// try to load the private key
+	var privateExists bool
 	privateFile := fmt.Sprintf(privateSuffixFormat, id)
-	if keyFileExists(privateFile) {
-		if private, err = readKey(privateFile, keysFolderPrefixFormat); err != nil {
+	privateDat, err := storage.Read(privateFile)
+	if err != nil {
+		return public, private, err
+	} else if len(privateDat) > 0 {
+		private, err = readKey(privateDat)
+		if err != nil {
 			return public, private, err
+		} else {
+			privateExists = true
 		}
 	}
+
 	// try to load the public key and if it succeed, then return both the keys
 	publicFile := fmt.Sprintf(publicKeySuffixFormat, id)
-	if keyFileExists(publicFile) {
-		if public, err = readKey(publicFile, keysFolderPrefixFormat); err != nil {
+
+	if privateExists {
+		var publicExists bool
+		publicDat, err := storage.Read(publicFile)
+		if err != nil {
 			return public, private, err
+		} else if len(publicDat) > 0 {
+			public, err = readKey(publicDat)
+			if err != nil {
+				return public, private, err
+			} else {
+				publicExists = true
+			}
 		}
 
-		// if we reached here, it means that both the private and the public key
-		// existed and loaded successfully
-		return public, private, err
+		if publicExists {
+			return public, private, nil
+		}
 	}
 
 	// if we reached here then, we need to cerate the key pair
 	tempPublic, tempPrivate, err := box.GenerateKey(rand.Reader)
-
-	// check for errors first, otherwise continue and store the keys to files
 	if err != nil {
 		return public, private, err
 	}
+
 	// dereference the pointers
 	public = *tempPublic
 	private = *tempPrivate
 
 	// write the public key first
-	if err := writeKey(publicFile, keysFolderPrefixFormat, public[:]); err != nil {
+	publicDat, err := writeKey(public[:])
+	if err != nil {
 		return public, private, err
 	}
 
-	// write the private
-	if err := writeKey(privateFile, keysFolderPrefixFormat, private[:]); err != nil {
+	err = storage.Write(publicFile, publicDat)
+	if err != nil {
+		return public, private, err
+	}
+
+	// write the public key first
+	privateDat, err = writeKey(private[:])
+	if err != nil {
+		return public, private, err
+	}
+
+	err = storage.Write(privateFile, privateDat)
+	if err != nil {
 		// delete the public key, otherwise we remain in an unwanted state
 		// the delete can fail as well, therefore we print an error
-		if err := deleteFile(publicFile); err != nil {
-			log.Printf("[SEVERE] - The private key for asymmetric encryption, %s, failed to be persisted. \nWhile trying to cleanup also the public key previosuly stored, %s, the operation failed as well.\nWe are now in an unrecoverable state.Please delete both files manually: %s - %s", privateFile, publicFile, privateFile, publicFile)
+		if err := storage.Delete(publicFile); err != nil {
+			err = errors.WithMessagef(err, "The private key for asymmetric encryption, %s, failed to be persisted. \nWhile trying to cleanup also the public key previosuly stored, %s, the operation failed as well.\nWe are now in an unrecoverable state.Please delete both files manually: %s - %s", privateFile, publicFile, privateFile, publicFile)
 			return public, private, err
 		}
+
 		return public, private, err
 	}
 
 	// return the data
-	return public, private, err
-
+	return public, private, nil
 }
 
 // Sanitizes the input of the communicationIdentifier
@@ -508,4 +573,27 @@ func decryptWithPreShared(preSharedKey [keySize]byte, m EncryptedMessage) ([]byt
 	} else {
 		return decryptedMessage, nil
 	}
+}
+
+// Read the key file into a 32 byte array
+func readKey(data []byte) ([keySize]byte, error) {
+	var data32 [keySize]byte
+	var err error
+
+	// decode from hex
+	dst := make([]byte, len(data))
+	_, err = hex.Decode(dst, data) //.StdEncoding.Decode(dst, data)
+	if err != nil {
+		return data32, err
+	}
+	// fill in the 32 byte array witht he data and return it
+	copy(data32[:], dst[:keySize])
+	return data32, err
+}
+
+// Write the key file hex encoded
+func writeKey(data []byte) ([]byte, error) {
+	dst := make([]byte, hex.EncodedLen(len(data))) //StdEncoding.EncodedLen(len(data)))
+	hex.Encode(dst, data)                          // StdEncoding.Encode(dst, data)
+	return dst, nil
 }

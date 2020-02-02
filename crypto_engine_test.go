@@ -9,19 +9,23 @@ import (
 )
 
 func TestSecretKeyEncryption(t *testing.T) {
+	storage, err := NewStorageMemory()
+	if err != nil {
+		t.Fatalf("Got error - %+v", err)
+	}
 
 	message, err := NewMessage("The quick brown fox jumps over the lazy dog", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	enginePeer, err := InitCryptoEngine("Sec51")
+	enginePeer, err := InitCryptoEngine("gitw", storage)
 	if err != nil {
 		cleanUp()
 		t.Fatal(err)
 	}
 
-	engine, err := InitCryptoEngine("Sec51")
+	engine, err := InitCryptoEngine("gitw", storage)
 	if err != nil {
 		cleanUp()
 		t.Fatal(err)
@@ -96,30 +100,36 @@ func TestSecretKeyEncryption(t *testing.T) {
 }
 
 func TestPublicKeyEncryption(t *testing.T) {
+	storage, err := NewStorageMemory()
+	if err != nil {
+		t.Fatalf("Got error - %+v", err)
+	}
+
 	message, err := NewMessage("The quick brown fox jumps over the lazy dog", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	firstEngine, err := InitCryptoEngine("Sec51Peer1")
-	if err != nil {
-		cleanUp()
-		t.Fatal(err)
-	}
-	// test the verification engine
-	firstVerificationEngine, err := NewVerificationEngine("Sec51Peer1")
+	firstEngine, err := InitCryptoEngine("Sec51Peer1", storage)
 	if err != nil {
 		cleanUp()
 		t.Fatal(err)
 	}
 
-	secondEngine, err := InitCryptoEngine("Sec51Peer2")
+	// test the verification engine
+	firstVerificationEngine, err := NewVerificationEngine("Sec51Peer1", storage)
+	if err != nil {
+		cleanUp()
+		t.Fatal(err)
+	}
+
+	secondEngine, err := InitCryptoEngine("Sec51Peer2", storage)
 	if err != nil {
 		cleanUp()
 		t.Fatal(err)
 	}
 	// test the verification engine
-	secondVerificationEngine, err := NewVerificationEngine("Sec51Peer2")
+	secondVerificationEngine, err := NewVerificationEngine("Sec51Peer2", storage)
 	if err != nil {
 		cleanUp()
 		t.Fatal(err)
