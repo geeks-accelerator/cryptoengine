@@ -65,7 +65,7 @@ func (s *StorageAws) Write(name string, dat []byte) error {
 
 	secretId := filepath.Join(s.secretPrefix, name)
 
-	_, err := s.secretsManager.PutSecretValue(&secretsmanager.PutSecretValueInput{
+	_, err := s.secretsManager.UpdateSecret(&secretsmanager.UpdateSecretInput{
 		SecretId:     aws.String(secretId),
 		SecretBinary: dat,
 	})
