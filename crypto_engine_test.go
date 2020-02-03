@@ -2,7 +2,6 @@ package cryptoengine
 
 import (
 	"bytes"
-
 	"io/ioutil"
 	"strings"
 	"testing"

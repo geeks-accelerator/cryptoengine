@@ -6,7 +6,6 @@ type Storage interface {
 	Read(name string) ([]byte, error)
 	// Write
 	Write(name string, dat []byte) error
-
 	// Delete
 	Delete(name string) error
 }
