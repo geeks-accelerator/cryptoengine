@@ -65,8 +65,8 @@ func (s *StorageAws) Write(name string, dat []byte) error {
 
 	secretId := filepath.Join(s.secretPrefix, name)
 
-	_, err := s.secretsManager.UpdateSecret(&secretsmanager.UpdateSecretInput{
-		SecretId:     aws.String(secretId),
+	_, err := s.secretsManager.CreateSecret(&secretsmanager.CreateSecretInput{
+		Name:         aws.String(secretId),
 		SecretBinary: dat,
 	})
 	// Flag whether the secret exists and update needs to be used
@@ -142,9 +142,11 @@ func NewStorageAws(awsSession *session.Session, awsSecretPrefix string) (*Storag
 		return nil, errors.New("aws secret prefix cannot be empty")
 	}
 
+	sm := secretsmanager.New(awsSession)
+
 	storage := &StorageAws{
 		keys:           make(map[string][]byte),
-		secretsManager: secretsmanager.New(awsSession),
+		secretsManager: sm,
 		secretPrefix:   awsSecretPrefix,
 	}
 
