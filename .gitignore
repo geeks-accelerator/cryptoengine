@@ -1,3 +1,16 @@
+# CRITICAL SECURITY - Added by organization management
+# NEVER COMMIT THESE FILES
+.env
+.env.*
+*.env
+config/secrets/
+**/credentials/
+*.key
+*.pem
+
+# Original .gitignore content below
+# ================================
+
 keys
 keys/
 keys/*
